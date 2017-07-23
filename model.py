@@ -30,8 +30,8 @@ class FSRCNN(object):
     self.is_grayscale = (self.c_dim == 1)
     self.epoch = config.epoch
     self.scale = config.scale
-    self.stride = config.stride
     self.batch_size = config.batch_size
+    self.learning_rate = config.learning_rate
     self.threads = config.threads
     self.params = config.params
 
@@ -41,9 +41,11 @@ class FSRCNN(object):
     # Testing uses different strides to ensure sub-images line up correctly
     if not self.train:
       self.stride = [10, 7, 6][self.scale - 2]
+    else:
+      self.stride = [6, 4, 4][self.scale - 2]
 
-    # Different model layer counts and filter sizes for FSRCNN vs FSRCNN-s (fast), (s, d, m) in paper
-    model_params = [[56, 12, 4], [32, 5, 1]]
+    # Different model layer counts and filter sizes for FSRCNN vs FSRCNN-s (fast), (d, s, m) in paper
+    model_params = [[56, 12, 4], [32, 8, 1]]
     self.model_params = model_params[self.fast]
     
     self.checkpoint_dir = config.checkpoint_dir
@@ -59,21 +61,21 @@ class FSRCNN(object):
     self.batch = tf.placeholder(tf.int32, shape=[], name='batch')
 
     # FSCRNN-s (fast) has smaller filters and less layers but can achieve faster performance
-    s, d, m = self.model_params
+    d, s, m = self.model_params
 
     expand_weight, deconv_weight = 'w{}'.format(m + 3), 'w{}'.format(m + 4)
     self.weights = {
-      'w1': tf.Variable(tf.random_normal([5, 5, 1, s], stddev=0.0378, dtype=tf.float32), name='w1'),
-      'w2': tf.Variable(tf.random_normal([1, 1, s, d], stddev=0.3536, dtype=tf.float32), name='w2'),
-      expand_weight: tf.Variable(tf.random_normal([1, 1, d, s], stddev=0.189, dtype=tf.float32), name=expand_weight),
-      deconv_weight: tf.Variable(tf.random_normal([9, 9, 1, s], stddev=0.0001, dtype=tf.float32), name=deconv_weight)
+      'w1': tf.Variable(tf.random_normal([5, 5, 1, d], stddev=0.0378, dtype=tf.float32), name='w1'),
+      'w2': tf.Variable(tf.random_normal([1, 1, d, s], stddev=0.3536, dtype=tf.float32), name='w2'),
+      expand_weight: tf.Variable(tf.random_normal([1, 1, s, d], stddev=0.189, dtype=tf.float32), name=expand_weight),
+      deconv_weight: tf.Variable(tf.random_normal([9, 9, 1, d], stddev=0.0001, dtype=tf.float32), name=deconv_weight)
     }
 
     expand_bias, deconv_bias = 'b{}'.format(m + 3), 'b{}'.format(m + 4)
     self.biases = {
-      'b1': tf.Variable(tf.zeros([s]), name='b1'),
-      'b2': tf.Variable(tf.zeros([d]), name='b2'),
-      expand_bias: tf.Variable(tf.zeros([s]), name=expand_bias),
+      'b1': tf.Variable(tf.zeros([d]), name='b1'),
+      'b2': tf.Variable(tf.zeros([s]), name='b2'),
+      expand_bias: tf.Variable(tf.zeros([d]), name=expand_bias),
       deconv_bias: tf.Variable(tf.zeros([1]), name=deconv_bias)
     }
 
@@ -82,8 +84,8 @@ class FSRCNN(object):
     # Create the m mapping layers weights/biases
     for i in range(3, m + 3):
       weight_name, bias_name = 'w{}'.format(i), 'b{}'.format(i)
-      self.weights[weight_name] = tf.Variable(tf.random_normal([3, 3, d, d], stddev=0.1179, dtype=tf.float32), name=weight_name)
-      self.biases[bias_name] = tf.Variable(tf.zeros([d]), name=bias_name)
+      self.weights[weight_name] = tf.Variable(tf.random_normal([3, 3, s, s], stddev=0.1179, dtype=tf.float32), name=weight_name)
+      self.biases[bias_name] = tf.Variable(tf.zeros([s]), name=bias_name)
 
     self.pred = self.model()
 
@@ -94,9 +96,9 @@ class FSRCNN(object):
     self.saver = tf.train.Saver()
 
   def run(self):
-    self.train_op = tf.train.AdamOptimizer().minimize(self.loss)
+    self.train_op = tf.train.AdamOptimizer(self.learning_rate).minimize(self.loss)
 
-    tf.initialize_all_variables().run()
+    tf.global_variables_initializer().run()
 
     if self.load(self.checkpoint_dir):
       print(" [*] Load SUCCESS")
@@ -104,8 +106,8 @@ class FSRCNN(object):
       print(" [!] Load failed...")
 
     if self.params:
-      s, d, m = self.model_params
-      save_params(self.sess, self.weights, self.biases, self.alphas, s, d, m)
+      d, s, m = self.model_params
+      save_params(self.sess, self.weights, self.biases, self.alphas, d, s, m)
     elif self.train:
       self.run_train()
     else:
@@ -128,11 +130,11 @@ class FSRCNN(object):
     start_time = time.time()
     start_average, end_average, counter = 0, 0, 0
 
-    for ep in xrange(self.epoch):
+    for ep in range(self.epoch):
       # Run by batch images
       batch_idxs = len(train_data) // self.batch_size
       batch_average = 0
-      for idx in xrange(0, batch_idxs):
+      for idx in range(0, batch_idxs):
         batch_images = train_data[idx * self.batch_size : (idx + 1) * self.batch_size]
         batch_labels = train_label[idx * self.batch_size : (idx + 1) * self.batch_size]
 
@@ -178,7 +180,7 @@ class FSRCNN(object):
     result = self.pred.eval({self.images: test_data, self.labels: test_label, self.batch: nx * ny})
     print("Took %.3f seconds" % (time.time() - start_time))
 
-    result = merge(result, [nx, ny])
+    result = merge(result, [nx, ny, self.c_dim])
     result = result.squeeze()
     image_path = os.path.join(os.getcwd(), self.output_dir)
     image_path = os.path.join(image_path, "test_image.png")

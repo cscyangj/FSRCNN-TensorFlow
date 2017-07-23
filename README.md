@@ -2,11 +2,11 @@
 TensorFlow implementation of the Fast Super-Resolution Convolutional Neural Network (FSRCNN). This implements two models: FSRCNN which is more accurate but slower and FSRCNN-s which is faster but less accurate. Based on this [project](http://mmlab.ie.cuhk.edu.hk/projects/FSRCNN.html).
 
 ## Prerequisites
- * Python 2.7
- * TensorFlow
- * Scipy version > 0.18
+ * Python 3
+ * TensorFlow-gpu >= 1.3
+ * CUDA & cuDNN >= 6.0
  * h5py
- * PIL
+ * Pillow
 
 ## Usage
 For training: `python main.py`
@@ -15,9 +15,9 @@ For testing: `python main.py --train False`
 
 To use FSCRNN-s instead of FSCRNN: `python main.py --fast True`
 
-Can specify epochs, learning rate, data directory, etc:
+Can specify epochs, data directory, etc:
 <br>
-`python main.py --epochs 10 --learning_rate 0.0001 --data_dir Train`
+`python main.py --epoch 100 --data_dir Train`
 <br>
 Check `main.py` for all the possible flags
 
@@ -27,23 +27,22 @@ Also includes script `expand_data.py` which scales and rotates all the images in
 
 Original butterfly image:
 
-![orig](https://github.com/drakelevy/FSRCNN-Tensorflow/blob/master/result/original.png?raw=true)
+![orig](https://github.com/igv/FSRCNN-Tensorflow/blob/master/result/original.png?raw=true)
 
 
-Bicubic interpolated image:
+Ewa_lanczos interpolated image:
 
-![bicubic](https://github.com/drakelevy/FSRCNN-Tensorflow/blob/master/result/bicubic.png?raw=true)
+![ewa_lanczos](https://github.com/igv/FSRCNN-Tensorflow/blob/master/result/ewa_lanczos.png?raw=true)
 
 
 Super-resolved image:
 
-![srcnn](https://github.com/drakelevy/FSRCNN-Tensorflow/blob/master/result/fsrcnn.png?raw=true)
+![fsrcnn](https://github.com/igv/FSRCNN-Tensorflow/blob/master/result/fsrcnn.png?raw=true)
 
 ## TODO
 
 * Add RGB support (Increase each layer depth to 3)
 * Speed up pre-processing for large datasets
-* Set learning rate for deconvolutional layer to 1e-4 (vs 1e-3 for the rest)
 
 ## References
 

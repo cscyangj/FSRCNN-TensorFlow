@@ -5,13 +5,11 @@ Scipy version > 0.18 is needed, due to 'mode' option from scipy.misc.imread func
 import os
 import glob
 import h5py
-import random
-from math import floor
+from math import ceil
 import struct
 
 import tensorflow as tf
 from PIL import Image  
-from scipy.misc import imread
 import numpy as np
 from multiprocessing import Pool, Lock, active_children
 
@@ -45,18 +43,18 @@ def preprocess(path, scale=3):
 
   image = Image.open(path).convert('L')
   (width, height) = image.size
-  label_ = np.array(list(image.getdata())).astype(np.float).reshape((height, width)) / 255
+  label_ = np.fromstring(image.tobytes(), dtype=np.uint8).reshape((height, width)) / 255
   image.close()
 
   cropped_image = Image.fromarray(modcrop(label_, scale))
-  
+
   (width, height) = cropped_image.size
   new_width, new_height = int(width / scale), int(height / scale)
-  scaled_image = cropped_image.resize((new_width, new_height), Image.ANTIALIAS)
+  scaled_image = cropped_image.resize((new_width, new_height), Image.BICUBIC)
   cropped_image.close()
 
   (width, height) = scaled_image.size
-  input_ = np.array(list(scaled_image.getdata())).astype(np.float).reshape((height, width))
+  input_ = np.array(scaled_image.getdata()).astype(np.float).reshape((height, width))
 
   return input_, label_
 
@@ -90,16 +88,6 @@ def make_data(sess, checkpoint_dir, data, label):
     hf.create_dataset('data', data=data)
     hf.create_dataset('label', data=label)
 
-def image_read(path, is_grayscale=True):
-  """
-  Read image using its path.
-  Default value is gray-scale, and image is read by YCbCr format as the paper said.
-  """
-  if is_grayscale:
-    return imread(path, flatten=True, mode='YCbCr').astype(np.float)
-  else:
-    return imread(path, mode='YCbCr').astype(np.float)
-
 def modcrop(image, scale=3):
   """
   To scale down and up the original image, first thing to do is to have no remainder while scaling operation.
@@ -122,11 +110,11 @@ def modcrop(image, scale=3):
 
 def train_input_worker(args):
   image_data, config = args
-  image_size, label_size, stride, scale, save_image = config
+  image_size, label_size, stride, scale = config
 
   single_input_sequence, single_label_sequence = [], []
-  padding = abs(image_size - label_size) / 2 # eg. for 3x: (21 - 11) / 2 = 5
-  label_padding = label_size / scale # eg. for 3x: 21 / 3 = 7
+  padding = abs(image_size - label_size) // 2 # eg. for 3x: (21 - 11) / 2 = 5
+  label_padding = abs((image_size - 4) - label_size) // 2 # eg. for 3x: (21 - (11 - 4)) / 2 = 7
 
   input_, label_ = preprocess(image_data, scale)
 
@@ -167,8 +155,8 @@ def thread_train_setup(config):
   pool = Pool(config.threads)
 
   # Distribute |images_per_thread| images across each worker process
-  config_values = [config.image_size, config.label_size, config.stride, config.scale, config.save_image]
-  images_per_thread = len(data) / config.threads
+  config_values = [config.image_size, config.label_size, config.stride, config.scale]
+  images_per_thread = len(data) // config.threads
   workers = []
   for thread in range(config.threads):
     args_list = [(data[i], config_values) for i in range(thread * images_per_thread, (thread + 1) * images_per_thread)]
@@ -210,10 +198,10 @@ def train_input_setup(config):
   data = prepare_data(sess, dataset=config.data_dir)
 
   sub_input_sequence, sub_label_sequence = [], []
-  padding = abs(image_size - label_size) / 2 # eg. for 3x: (21 - 11) / 2 = 5
-  label_padding = label_size / scale # eg. for 3x: 21 / 3 = 7
+  padding = abs(image_size - label_size) // 2 # eg. for 3x: (21 - 11) / 2 = 5
+  label_padding = abs((image_size - 4) - label_size) // 2 # eg. for 3x: (21 - (11 - 4)) / 2 = 7
 
-  for i in xrange(len(data)):
+  for i in range(len(data)):
     input_, label_ = preprocess(data[i], scale)
 
     if len(input_.shape) == 3:
@@ -250,8 +238,8 @@ def test_input_setup(config):
   data = prepare_data(sess, dataset="Test")
 
   sub_input_sequence, sub_label_sequence = [], []
-  padding = abs(image_size - label_size) / 2 # eg. (21 - 11) / 2 = 5
-  label_padding = label_size / scale # eg. 21 / 3 = 7
+  padding = abs(image_size - label_size) // 2 # eg. (21 - 11) / 2 = 5
+  label_padding = abs((image_size - 4) - label_size) // 2 # eg. for 3x: (21 - (11 - 4)) / 2 = 7
 
   pic_index = 2 # Index of image based on lexicographic order in data folder
   input_, label_ = preprocess(data[pic_index], config.scale)
@@ -273,7 +261,7 @@ def test_input_setup(config):
 
       sub_input = sub_input.reshape([image_size, image_size, 1])
       sub_label = sub_label.reshape([label_size, label_size, 1])
-      
+
       sub_input_sequence.append(sub_input)
       sub_label_sequence.append(sub_label)
 
@@ -285,13 +273,13 @@ def test_input_setup(config):
   return nx, ny
 
 # You can ignore, I just wanted to see how much space all the parameters would take up
-def save_params(sess, weights, biases, alphas, s, d, m):
+def save_params(sess, weights, biases, alphas, d, s, m):
   param_dir = "params/"
 
   if not os.path.exists(param_dir):
     os.makedirs(param_dir)
 
-  h = open(param_dir + "weights{}_{}_{}.txt".format(s, d, m), 'w')
+  h = open(param_dir + "weights{}_{}_{}.txt".format(d, s, m), 'w')
 
   for layer in weights:
     h.write("{} =\n  [".format(layer))
@@ -312,7 +300,7 @@ def save_params(sess, weights, biases, alphas, s, d, m):
 
     h.write("]\n\n")
 
-  for layer, tensor in biases.items() + alphas.items():
+  for layer, tensor in list(biases.items()) + list(alphas.items()):
     h.write("{} = [".format(layer))
     vals = sess.run(tensor)
     h.write(",".join(map(str, vals)))
@@ -325,7 +313,7 @@ def merge(images, size):
   Merges sub-images back into original image size
   """
   h, w = images.shape[1], images.shape[2]
-  img = np.zeros((h * size[0], w * size[1], 1))
+  img = np.zeros((h * size[0], w * size[1], size[2]))
   for idx, image in enumerate(images):
     i = idx % size[1]
     j = idx // size[1]
@@ -361,24 +349,23 @@ def _tf_fspecial_gauss(size, sigma):
     return g / tf.reduce_sum(g)
 
 
-def tf_ssim(img1, img2, cs_map=False, mean_metric=True, size=11, sigma=1.5):
-    window = _tf_fspecial_gauss(size, sigma) # window shape [size, size]
+def tf_ssim(img1, img2, cs_map=False, l=False, mean_metric=True, size=3):
+    window = tf.fill([size, size, 1, 1], 1.0 / size**2)
     K1 = 0.01
     K2 = 0.03
     L = 1  # depth of image (255 in case the image has a differnt scale)
     C1 = (K1*L)**2
     C2 = (K2*L)**2
     mu1 = tf.nn.conv2d(img1, window, strides=[1,1,1,1], padding='VALID')
-    mu2 = tf.nn.conv2d(img2, window, strides=[1,1,1,1],padding='VALID')
+    mu2 = tf.nn.conv2d(img2, window, strides=[1,1,1,1], padding='VALID')
     mu1_sq = mu1*mu1
     mu2_sq = mu2*mu2
     mu1_mu2 = mu1*mu2
-    sigma1_sq = tf.nn.conv2d(img1*img1, window, strides=[1,1,1,1],padding='VALID') - mu1_sq
-    sigma2_sq = tf.nn.conv2d(img2*img2, window, strides=[1,1,1,1],padding='VALID') - mu2_sq
-    sigma12 = tf.nn.conv2d(img1*img2, window, strides=[1,1,1,1],padding='VALID') - mu1_mu2
+    sigma1_sq = tf.nn.conv2d(img1*img1, window, strides=[1,1,1,1], padding='VALID') - mu1_sq
+    sigma2_sq = tf.nn.conv2d(img2*img2, window, strides=[1,1,1,1], padding='VALID') - mu2_sq
+    sigma12 = tf.nn.conv2d(img1*img2, window, strides=[1,1,1,1], padding='VALID') - mu1_mu2
     if cs_map:
-        value = (((2*mu1_mu2 + C1)*(2*sigma12 + C2))/((mu1_sq + mu2_sq + C1)*
-                    (sigma1_sq + sigma2_sq + C2)),
+        value = ((2.0*mu1_mu2 + C1)/(mu1_sq + mu2_sq + C1) if l==True else 1.0,
                 (2.0*sigma12 + C2)/(sigma1_sq + sigma2_sq + C2))
     else:
         value = ((2*mu1_mu2 + C1)*(2*sigma12 + C2))/((mu1_sq + mu2_sq + C1)*
@@ -389,26 +376,25 @@ def tf_ssim(img1, img2, cs_map=False, mean_metric=True, size=11, sigma=1.5):
     return value
 
 
-def tf_ms_ssim(img1, img2, mean_metric=True, level=5):
-    weight = tf.constant([0.0448, 0.2856, 0.3001, 0.2363, 0.1333], dtype=tf.float32)
-    mssim = []
+def tf_ms_ssim(img1, img2, level=5, size=3):
+    weight = tf.constant([[1.0], [0.5, 0.5], None, None, [0.0448, 0.2856, 0.3001, 0.2363, 0.1333]][level-1], dtype=tf.float32)
+    window = _tf_fspecial_gauss(3, 0.5)
+    ml = []
     mcs = []
-    for l in range(level):
-        ssim_map, cs_map = tf_ssim(img1, img2, cs_map=True, mean_metric=False)
-        mssim.append(tf.reduce_mean(ssim_map))
+    for i in range(level):
+        l_map, cs_map = tf_ssim(img1, img2, cs_map=True, l=(i==level-1), mean_metric=False, size=size)
+        ml.append(tf.reduce_mean(l_map))
         mcs.append(tf.reduce_mean(cs_map))
-        filtered_im1 = tf.nn.avg_pool(img1, [1,2,2,1], [1,2,2,1], padding='SAME')
-        filtered_im2 = tf.nn.avg_pool(img2, [1,2,2,1], [1,2,2,1], padding='SAME')
-        img1 = filtered_im1
-        img2 = filtered_im2
+        #img1 = tf.nn.conv2d(img1, window, strides=[1,1,1,1], padding='SAME')
+        #img2 = tf.nn.conv2d(img2, window, strides=[1,1,1,1], padding='SAME')
+        size = img1.shape[1].value // 2 + 1
+        img1 = tf.image.resize_bilinear(img1, [size, size])
+        img2 = tf.image.resize_bilinear(img2, [size, size])
 
     # list to tensor of dim D+1
-    mssim = tf.stack(mssim, axis=0)
+    ml = tf.stack(ml, axis=0)
     mcs = tf.stack(mcs, axis=0)
 
-    value = (tf.reduce_prod(mcs[0:level-1]**weight[0:level-1])*
-                            (mssim[level-1]**weight[level-1]))
+    value = tf.reduce_prod(tf.pow(mcs, weight)) * tf.pow(ml[level-1], weight[level-1])
 
-    if mean_metric:
-        value = tf.reduce_mean(value)
     return value

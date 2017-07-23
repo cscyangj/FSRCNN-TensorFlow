@@ -13,7 +13,7 @@ def main():
     print("Missing argument: You must specify a folder with images to expand")
     return
 
-  for i in xrange(len(data)):
+  for i in range(len(data)):
     scale(data[i])
     rotate(data[i])
 
