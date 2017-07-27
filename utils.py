@@ -7,6 +7,8 @@ import glob
 import h5py
 from math import ceil
 import struct
+import io
+from random import randrange
 
 import tensorflow as tf
 from PIL import Image  
@@ -33,12 +35,12 @@ def read_data(path):
     label = np.array(hf.get('label'))
     return data, label
 
-def preprocess(path, scale=3):
+def preprocess(path, scale=3, distort=False):
   """
   Preprocess single image file 
-    (1) Read original image as YCbCr format (and grayscale as default)
+    (1) Read original image as YCbCr format
     (2) Normalize
-    (3) Downsampled by scale factor (using anti-aliasing)
+    (3) Downsampled by scale factor
   """
 
   image = Image.open(path).convert('L')
@@ -55,6 +57,14 @@ def preprocess(path, scale=3):
 
   (width, height) = scaled_image.size
   input_ = np.array(scaled_image.getdata()).astype(np.float).reshape((height, width))
+
+  if randrange(3) == 2 and distort==True:
+      buf = io.BytesIO()
+      i = Image.fromarray(input_ * 255)
+      i.convert('RGB').save(buf, "JPEG", quality=randrange(50, 99, 5))
+      buf.seek(0)
+      scaled_image = Image.open(buf).convert('L')
+      input_ = np.fromstring(scaled_image.tobytes(), dtype=np.uint8).reshape((height, width)) / 255
 
   return input_, label_
 
@@ -110,13 +120,13 @@ def modcrop(image, scale=3):
 
 def train_input_worker(args):
   image_data, config = args
-  image_size, label_size, stride, scale = config
+  image_size, label_size, stride, scale, distort = config
 
   single_input_sequence, single_label_sequence = [], []
   padding = abs(image_size - label_size) // 2 # eg. for 3x: (21 - 11) / 2 = 5
   label_padding = abs((image_size - 4) - label_size) // 2 # eg. for 3x: (21 - (11 - 4)) / 2 = 7
 
-  input_, label_ = preprocess(image_data, scale)
+  input_, label_ = preprocess(image_data, scale, distort=distort)
 
   if len(input_.shape) == 3:
     h, w, _ = input_.shape
@@ -155,7 +165,7 @@ def thread_train_setup(config):
   pool = Pool(config.threads)
 
   # Distribute |images_per_thread| images across each worker process
-  config_values = [config.image_size, config.label_size, config.stride, config.scale]
+  config_values = [config.image_size, config.label_size, config.stride, config.scale, config.distort]
   images_per_thread = len(data) // config.threads
   workers = []
   for thread in range(config.threads):
@@ -202,7 +212,7 @@ def train_input_setup(config):
   label_padding = abs((image_size - 4) - label_size) // 2 # eg. for 3x: (21 - (11 - 4)) / 2 = 7
 
   for i in range(len(data)):
-    input_, label_ = preprocess(data[i], scale)
+    input_, label_ = preprocess(data[i], scale, distort=config.distort)
 
     if len(input_.shape) == 3:
       h, w, _ = input_.shape
