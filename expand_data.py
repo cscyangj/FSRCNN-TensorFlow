@@ -4,6 +4,7 @@ import glob
 import numpy as np
 from PIL import Image
 import pdb
+from random import randint
 
 # Artifically expands the dataset by a factor of 19 by scaling and then rotating every image
 def main():
@@ -14,8 +15,13 @@ def main():
     return
 
   for i in range(len(data)):
-    scale(data[i])
-    rotate(data[i])
+    scale(data[i], randint(0, 3))
+    rotate(data[i], randint(0, 2))
+    c = randint(0, 1)
+    if c==0:
+      flip_left_right(data[i])
+    else:
+      flip_top_bottom(data[i])
 
 def prepare_data(dataset):
   filenames = os.listdir(dataset)
@@ -24,25 +30,43 @@ def prepare_data(dataset):
 
   return data
 
-def scale(file):
+def scale(file, scale):
   image = Image.open(file)
   width, height = image.size
 
   scales = [0.9, 0.8, 0.7, 0.6]
-  for scale in scales:
-    new_width, new_height = int(width * scale), int(height * scale)
-    new_image = image.resize((new_width, new_height), Image.ANTIALIAS)
-    new_path = '{}-{}.bmp'.format(file[:-4], scale)
-    new_image.save(new_path)
+  new_width, new_height = int(width * scales[scale]), int(height * scales[scale])
+  new_image = image.resize((new_width, new_height), Image.BICUBIC)
+  new_path = '{}-{}.bmp'.format(file[:-4], scales[scale])
+  new_image.save(new_path)
+  """
+  rotate(new_path, randint(0, 2))
+  c = randint(0, 1)
+  if c==0:
+    flip_left_right(new_path)
+  else:
+    flip_top_bottom(new_path)
+  """
 
-def rotate(file):
+def rotate(file, rotation):
   image = Image.open(file)
 
   rotations = [90, 180, 270]
-  for rotation in rotations:
-    new_image = image.rotate(rotation, expand=True)
-    new_path = '{}-{}.bmp'.format(file[:-4], rotation)
-    new_image.save(new_path)
+  new_image = image.rotate(rotations[rotation], expand=True)
+  new_path = '{}-{}.bmp'.format(file[:-4], rotations[rotation])
+  new_image.save(new_path)
+
+def flip_left_right(file):
+  image = Image.open(file)
+  new_image = image.transpose(Image.FLIP_LEFT_RIGHT)
+  new_path = '{}-{}.bmp'.format(file[:-4], "lr")
+  new_image.save(new_path)
+
+def flip_top_bottom(file):
+  image = Image.open(file)
+  new_image = image.transpose(Image.FLIP_TOP_BOTTOM)
+  new_path = '{}-{}.bmp'.format(file[:-4], "tb")
+  new_image.save(new_path)
 
 if __name__ == '__main__':
   main()
