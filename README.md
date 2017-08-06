@@ -39,6 +39,15 @@ Super-resolved image:
 
 ![fsrcnn](https://github.com/igv/FSRCNN-Tensorflow/blob/master/result/fsrcnn.png?raw=true)
 
+### More
+
+![baby](https://github.com/igv/FSRCNN-Tensorflow/blob/master/result/baby.png?raw=true "original") ![baby-fsrcnn](https://github.com/igv/FSRCNN-Tensorflow/blob/master/result/baby-fsrcnn.png?raw=true "fsrcnn")
+
+
+With --distort=True:
+
+![woman](https://github.com/igv/FSRCNN-Tensorflow/blob/master/result/woman.png?raw=true "original") ![woman-fsrcnn](https://github.com/igv/FSRCNN-Tensorflow/blob/master/result/woman-fsrcnn.png?raw=true "fsrcnn")
+
 ## TODO
 
 * Add RGB support (Increase each layer depth to 3)
