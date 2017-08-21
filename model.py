@@ -226,7 +226,8 @@ class FSRCNN(object):
 
   def save(self, checkpoint_dir, step):
     model_name = "FSRCNN.model"
-    model_dir = "%s_%s" % ("fsrcnn", self.label_size)
+    d, s, m = self.model_params
+    model_dir = "%s_%s_%s-%s-%s" % ("fsrcnn", self.label_size, d, s, m)
     checkpoint_dir = os.path.join(checkpoint_dir, model_dir)
 
     if not os.path.exists(checkpoint_dir):
@@ -238,7 +239,8 @@ class FSRCNN(object):
 
   def load(self, checkpoint_dir):
     print(" [*] Reading checkpoints...")
-    model_dir = "%s_%s" % ("fsrcnn", self.label_size)
+    d, s, m = self.model_params
+    model_dir = "%s_%s_%s-%s-%s" % ("fsrcnn", self.label_size, d, s, m)
     checkpoint_dir = os.path.join(checkpoint_dir, model_dir)
 
     ckpt = tf.train.get_checkpoint_state(checkpoint_dir)
