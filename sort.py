@@ -2,26 +2,29 @@ import sys
 
 def main():
   scale = 2
-  radius = [3, 5, 7][scale-2]
+  radius = 2
+  size = radius * scale * 2 + 1
   d = 64        #size of the feature layer
+
   if len(sys.argv) == 2:
     fname=sys.argv[1]
     with open(fname) as f:
         content = f.readlines()
     content = [x.strip() for x in content]
 
+    x=list(reversed(range(scale)))
+    x=x[-1:]+x[:-1]
     xy = []
-    for i in range(0, scale):
-        for j in range(0, scale):
+    for i in x:
+        for j in x:
             xy.append([j, i])
-    xy = list(reversed(xy))
 
     m = []
     for i in range(0, len(xy)):
         xi, yi = xy[i]
-        for x in range(xi, radius*2+1, scale):
-            for y in range(yi, radius*2+1, scale):
-                m.append(y + x*(radius*2+1))
+        for y in range(yi, size, scale):
+            for x in range(xi, size, scale):
+                m.append(y + x * size)
     #print(m)
     content = list(reversed(content))
     sort = [content[m[l]].strip(",") for l in range(0, len(m))]

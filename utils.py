@@ -120,11 +120,9 @@ def modcrop(image, scale=3):
 
 def train_input_worker(args):
   image_data, config = args
-  image_size, label_size, stride, scale, distort = config
+  image_size, label_size, stride, scale, padding, distort = config
 
   single_input_sequence, single_label_sequence = [], []
-  padding = abs(image_size - label_size) // 2 # eg. for 3x: (21 - 11) / 2 = 5
-  label_padding = abs((image_size - 4) - label_size) // 2 # eg. for 3x: (21 - (11 - 4)) / 2 = 7
 
   input_, label_ = preprocess(image_data, scale, distort=distort)
 
@@ -133,10 +131,10 @@ def train_input_worker(args):
   else:
     h, w = input_.shape
 
-  for x in range(0, h - image_size - padding + 1, stride):
-    for y in range(0, w - image_size - padding + 1, stride):
-      sub_input = input_[x + padding : x + padding + image_size, y + padding : y + padding + image_size]
-      x_loc, y_loc = x + label_padding, y + label_padding
+  for x in range(0, h - image_size + 1, stride):
+    for y in range(0, w - image_size + 1, stride):
+      sub_input = input_[x : x + image_size, y : y + image_size]
+      x_loc, y_loc = x + padding, y + padding
       sub_label = label_[x_loc * scale : x_loc * scale + label_size, y_loc * scale : y_loc * scale + label_size]
 
       sub_input = sub_input.reshape([image_size, image_size, 1])
@@ -165,7 +163,7 @@ def thread_train_setup(config):
   pool = Pool(config.threads)
 
   # Distribute |images_per_thread| images across each worker process
-  config_values = [config.image_size, config.label_size, config.stride, config.scale, config.distort]
+  config_values = [config.image_size, config.label_size, config.stride, config.scale, config.radius, config.distort]
   images_per_thread = len(data) // config.threads
   workers = []
   for thread in range(config.threads):
@@ -202,14 +200,12 @@ def train_input_setup(config):
   Read image files, make their sub-images, and save them as a h5 file format.
   """
   sess = config.sess
-  image_size, label_size, stride, scale = config.image_size, config.label_size, config.stride, config.scale
+  image_size, label_size, stride, scale, padding = config.image_size, config.label_size, config.stride, config.scale, config.radius
 
   # Load data path
   data = prepare_data(sess, dataset=config.data_dir)
 
   sub_input_sequence, sub_label_sequence = [], []
-  padding = abs(image_size - label_size) // 2 # eg. for 3x: (21 - 11) / 2 = 5
-  label_padding = abs((image_size - 4) - label_size) // 2 # eg. for 3x: (21 - (11 - 4)) / 2 = 7
 
   for i in range(len(data)):
     input_, label_ = preprocess(data[i], scale, distort=config.distort)
@@ -219,10 +215,10 @@ def train_input_setup(config):
     else:
       h, w = input_.shape
 
-    for x in range(0, h - image_size - padding + 1, stride):
-      for y in range(0, w - image_size - padding + 1, stride):
-        sub_input = input_[x + padding : x + padding + image_size, y + padding : y + padding + image_size]
-        x_loc, y_loc = x + label_padding, y + label_padding
+    for x in range(0, h - image_size + 1, stride):
+      for y in range(0, w - image_size + 1, stride):
+        sub_input = input_[x : x + image_size, y : y + image_size]
+        x_loc, y_loc = x + padding, y + padding
         sub_label = label_[x_loc * scale : x_loc * scale + label_size, y_loc * scale : y_loc * scale + label_size]
 
         sub_input = sub_input.reshape([image_size, image_size, 1])
@@ -242,14 +238,12 @@ def test_input_setup(config):
   Read image files, make their sub-images, and save them as a h5 file format.
   """
   sess = config.sess
-  image_size, label_size, stride, scale = config.image_size, config.label_size, config.stride, config.scale
+  image_size, label_size, stride, scale, padding = config.image_size, config.label_size, config.stride, config.scale, config.radius
 
   # Load data path
   data = prepare_data(sess, dataset="Test")
 
   sub_input_sequence, sub_label_sequence = [], []
-  padding = abs(image_size - label_size) // 2 # eg. (21 - 11) / 2 = 5
-  label_padding = abs((image_size - 4) - label_size) // 2 # eg. for 3x: (21 - (11 - 4)) / 2 = 7
 
   pic_index = 2 # Index of image based on lexicographic order in data folder
   input_, label_ = preprocess(data[pic_index], config.scale)
@@ -260,13 +254,13 @@ def test_input_setup(config):
     h, w = input_.shape
 
   nx, ny = 0, 0
-  for x in range(0, h - image_size - padding + 1, stride):
+  for x in range(0, h - image_size + 1, stride):
     nx += 1
     ny = 0
-    for y in range(0, w - image_size - padding + 1, stride):
+    for y in range(0, w - image_size + 1, stride):
       ny += 1
-      sub_input = input_[x + padding : x + padding + image_size, y + padding : y + padding + image_size]
-      x_loc, y_loc = x + label_padding, y + label_padding
+      sub_input = input_[x : x + image_size, y : y + image_size]
+      x_loc, y_loc = x + padding, y + padding
       sub_label = label_[x_loc * scale : x_loc * scale + label_size, y_loc * scale : y_loc * scale + label_size]
 
       sub_input = sub_input.reshape([image_size, image_size, 1])

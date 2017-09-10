@@ -30,14 +30,16 @@ class FSRCNN(object):
     self.is_grayscale = (self.c_dim == 1)
     self.epoch = config.epoch
     self.scale = config.scale
+    self.radius = config.radius
     self.batch_size = config.batch_size
     self.learning_rate = config.learning_rate
     self.threads = config.threads
     self.distort = config.distort
     self.params = config.params
 
+    self.padding = self.radius * 2
     # Different image/label sub-sizes for different scaling factors x2, x3, x4
-    scale_factors = [[14, 20], [11, 21], [10, 24]]
+    scale_factors = [[10 + self.padding, 20], [7 + self.padding, 21], [6 + self.padding, 24]]
     self.image_size, self.label_size = scale_factors[self.scale - 2]
     # Testing uses different strides to ensure sub-images line up correctly
     if not self.train:
@@ -48,8 +50,6 @@ class FSRCNN(object):
     # Different model layer counts and filter sizes for FSRCNN vs FSRCNN-s (fast), (d, s, m) in paper
     model_params = [[56, 12, 4], [32, 8, 1]]
     self.model_params = model_params[self.fast]
-
-    self.deconv_radius = [3, 5, 7][self.scale - 2]
     
     self.checkpoint_dir = config.checkpoint_dir
     self.output_dir = config.output_dir
@@ -169,7 +169,8 @@ class FSRCNN(object):
     d, s, m = self.model_params
 
     # Feature Extraction
-    self.weights['w1'] = tf.get_variable('w1', initializer=tf.random_normal([5, 5, 1, d], stddev=0.0378, dtype=tf.float32))
+    size = self.radius * 2 + 1
+    self.weights['w1'] = tf.get_variable('w1', initializer=tf.random_normal([size, size, 1, d], stddev=0.0378, dtype=tf.float32))
     self.biases['b1'] = tf.get_variable('b1', initializer=tf.zeros([d]))
     conv = self.prelu(tf.nn.conv2d(self.images, self.weights['w1'], strides=[1,1,1,1], padding='VALID') + self.biases['b1'], 1)
 
@@ -196,7 +197,7 @@ class FSRCNN(object):
       conv = self.prelu(tf.nn.conv2d(conv, expand_weights, strides=[1,1,1,1], padding='SAME') + expand_biases, m + 3)
 
     # Deconvolution
-    deconv_size = self.deconv_radius * 2 + 1
+    deconv_size = self.radius * self.scale * 2 + 1
     deconv_weights = tf.get_variable('w{}'.format(m + 4), initializer=tf.random_normal([deconv_size, deconv_size, 1, d], stddev=0.0001, dtype=tf.float32))
     deconv_biases = tf.get_variable('b{}'.format(m + 4), initializer=tf.zeros([1]))
     self.weights['w{}'.format(m + 4)], self.biases['b{}'.format(m + 4)] = deconv_weights, deconv_biases
@@ -220,7 +221,7 @@ class FSRCNN(object):
   def save(self, checkpoint_dir, step):
     model_name = "FSRCNN.model"
     d, s, m = self.model_params
-    model_dir = "%s_%s_%s-%s-%s" % ("fsrcnn", self.label_size, d, s, m)
+    model_dir = "%s_%s_%s-%s-%s_%s" % ("fsrcnn", self.label_size, d, s, m, "r"+str(self.radius))
     checkpoint_dir = os.path.join(checkpoint_dir, model_dir)
 
     if not os.path.exists(checkpoint_dir):
@@ -233,7 +234,7 @@ class FSRCNN(object):
   def load(self, checkpoint_dir):
     print(" [*] Reading checkpoints...")
     d, s, m = self.model_params
-    model_dir = "%s_%s_%s-%s-%s" % ("fsrcnn", self.label_size, d, s, m)
+    model_dir = "%s_%s_%s-%s-%s_%s" % ("fsrcnn", self.label_size, d, s, m, "r"+str(self.radius))
     checkpoint_dir = os.path.join(checkpoint_dir, model_dir)
 
     ckpt = tf.train.get_checkpoint_state(checkpoint_dir)
