@@ -277,13 +277,13 @@ def test_input_setup(config):
   return nx, ny
 
 # You can ignore, I just wanted to see how much space all the parameters would take up
-def save_params(sess, weights, biases, alphas, d, s, m):
+def save_params(sess, weights, biases, alphas, params):
   param_dir = "params/"
 
   if not os.path.exists(param_dir):
     os.makedirs(param_dir)
 
-  h = open(param_dir + "weights{}_{}_{}.txt".format(d, s, m), 'w')
+  h = open(param_dir + "weights{}.txt".format('_'.join(str(i) for i in params)), 'w')
 
   for layer in weights:
     h.write("{} =\n  [".format(layer))
