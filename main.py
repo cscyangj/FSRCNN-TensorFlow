@@ -7,7 +7,7 @@ import pprint
 import os
 
 flags = tf.app.flags
-flags.DEFINE_integer("arch", 1, "1 - FSRCNN, 2 - ESPCN [1]")
+flags.DEFINE_integer("arch", 1, "1 - FSRCNN, 2 - ESPCN, 3 - LapSRN [1]")
 flags.DEFINE_boolean("fast", False, "Use the fast model (FSRCNN-s) [False]")
 flags.DEFINE_integer("epoch", 10, "Number of epochs [10]")
 flags.DEFINE_integer("batch_size", 128, "The size of batch images [128]")

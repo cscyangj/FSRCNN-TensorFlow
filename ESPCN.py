@@ -1,4 +1,5 @@
 import tensorflow as tf
+from utils import tf_ms_ssim
 
 class ESPCN(object):
 
@@ -50,3 +51,7 @@ class ESPCN(object):
     self.alphas['alpha{}'.format(i)] = alphas
 
     return tf.nn.relu(_x) - alphas * tf.nn.relu(-_x)
+
+  def loss(self, Y, X):
+    ssim = tf_ms_ssim(Y, X, level=2)
+    return (1 - ssim) / 2
