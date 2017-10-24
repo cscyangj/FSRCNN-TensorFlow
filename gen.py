@@ -1,5 +1,7 @@
 import sys
 from itertools import islice
+from utils import bilinear_upsample_weights
+import numpy as np
 
 scale = 2
 radius = 2
@@ -11,6 +13,7 @@ def get_line_number(phrase, file_name):
         for i, line in enumerate(f, 1):
             if phrase in line:
                 return i
+        return False
 
 def read_weights(file_name, ln, size=0):
     content = []
@@ -51,11 +54,13 @@ def header3(file, m, n, d):
     file.write('//!SAVE MODEL{}\n'.format((n//4)%(d//4) + 1 + (20 if m % 2 == 1 else 0)))
     file.write('//!COMPONENTS 4\n')
 
-def header4(file, m, d):
+def header4(file, m, d, grl):
     base_header(file)
     file.write('//!WIDTH LUMA.w {} *\n'.format(scale))
     file.write('//!HEIGHT LUMA.h {} *\n'.format(scale))
     file.write('//!DESC aggregation\n')
+    if grl:
+        file.write('//!BIND HOOKED\n')
     for i in range(d//4):
         file.write('//!BIND MODEL{}\n'.format(i+1 + (20 if m % 2 == 1 else 0)))
     file.write('//!OFFSET -{}.0 -{}.0\n'.format(scale//2, scale//2))
@@ -63,7 +68,7 @@ def header4(file, m, d):
 def main():
   if len(sys.argv) == 2:
     fname=sys.argv[1]
-    d, s, m = [int(i) for i in fname[7:fname.index('.')].split("_")]
+    d, s, m, _ = [int(i) for i in fname[7:fname.index('.')].split("_")]
     if s == 0:
         s = d
     dst = fname.replace("_", "-").replace("weights", "FSRCNN_x{}_r{}_".format(scale, radius)).replace("txt", "glsl")
@@ -161,10 +166,11 @@ def main():
         # Aggregation
         ln = get_line_number("b{}".format(m + 4), fname)
         biases = read_weights(fname, ln)
-        header4(file, m, d)
+        grl = get_line_number("b{}".format(m + 5), fname)
+        header4(file, m, d, grl)
         file.write('vec4 hook()\n')
         file.write('{\n')
-        file.write('float res = {};\n'.format(biases[0]))
+        file.write('float res = {};\n'.format(float(biases[0]) + (float(read_weights(fname, grl)[0]) if grl else 0.0)))
         v = 1 + (20 if m % 2 == 1 else 0)
         file.write('vec2 fcoord = fract(MODEL{}_pos * MODEL{}_size);\n'.format(v, v))
         file.write('vec2 base = MODEL{}_pos + (vec2(0.5) - fcoord) * MODEL{}_pt;\n'.format(v, v))
@@ -173,6 +179,31 @@ def main():
         for i in range(d//4-1):
             file.write('+MODEL{}_tex(base)'.format(i + 1 + v))
         file.write(')[index.y * {} + index.x];\n'.format(scale))
+
+        if grl:
+            weights = bilinear_upsample_weights(scale, 1).ravel(order='F')
+            x=list(reversed(range(scale)))
+            xy = []
+            for i in x:
+                for j in x:
+                    xy.append([j, i])
+            id = []
+            for i in range(len(xy)):
+                xi, yi = xy[i]
+                for y in range(yi, scale * 2, scale):
+                    for x in range(xi, scale * 2, scale):
+                        id.append(y + x * (scale * 2))
+            sort = [weights[id[l]] for l in range(0, len(id))]
+            file.write('vec4 img = vec4(0);\n')
+            for i in range(scale):
+                for j in range(scale):
+                    idx = i * scale + j
+                    file.write('img[{}] =\n'.format(idx))
+                    file.write('{} * float(HOOKED_tex(base + HOOKED_pt * vec2(0,0)))+\n'.format(sort[idx * 4]))
+                    file.write('{} * float(HOOKED_tex(base + HOOKED_pt * vec2(1,0)))+\n'.format(sort[idx * 4 + 1]))
+                    file.write('{} * float(HOOKED_tex(base + HOOKED_pt * vec2(0,1)))+\n'.format(sort[idx * 4 + 2]))
+                    file.write('{} * float(HOOKED_tex(base + HOOKED_pt * vec2(1,1)));\n'.format(sort[idx * 4 + 3]))
+            file.write('res += img[index.y * {} + index.x];\n'.format(scale))
         file.write('return vec4(res, 0, 0, 1);\n')
         file.write('}\n')
 
