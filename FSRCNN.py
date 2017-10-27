@@ -21,7 +21,7 @@ class FSRCNN(object):
 
   def model(self):
 
-    d, s, m, _ = self.model_params
+    d, s, m, r = self.model_params
 
     # Feature Extraction
     size = self.padding + 1
@@ -38,11 +38,14 @@ class FSRCNN(object):
       s = d
 
     # Mapping (# mapping layers = m)
-    for i in range(3, m + 3):
-      weights = tf.get_variable('w{}'.format(i), initializer=tf.random_normal([3, 3, s, s], stddev=0.1179, dtype=tf.float32))
-      biases = tf.get_variable('b{}'.format(i), initializer=tf.zeros([s]))
-      self.weights['w{}'.format(i)], self.biases['b{}'.format(i)] = weights, biases
-      conv = self.prelu(tf.nn.conv2d(conv, weights, strides=[1,1,1,1], padding='SAME') + biases, i)
+    with tf.variable_scope("mapping_block") as scope:
+        for ri in range(r):
+          for i in range(3, m + 3):
+            weights = tf.get_variable('w{}'.format(i), initializer=tf.random_normal([3, 3, s, s], stddev=0.1179, dtype=tf.float32))
+            biases = tf.get_variable('b{}'.format(i), initializer=tf.zeros([s]))
+            self.weights['w{}'.format(i)], self.biases['b{}'.format(i)] = weights, biases
+            conv = self.prelu(tf.nn.conv2d(conv, weights, strides=[1,1,1,1], padding='SAME') + biases, i)
+          scope.reuse_variables()
 
     # Expanding
     if self.model_params[1] > 0:
