@@ -27,16 +27,18 @@ class FSRCNN(object):
     size = self.padding + 1
     self.weights['w1'] = tf.get_variable('w1', initializer=tf.random_normal([size, size, 1, d], stddev=0.0378, dtype=tf.float32))
     self.biases['b1'] = tf.get_variable('b1', initializer=tf.zeros([d]))
-    conv = self.prelu(tf.nn.conv2d(self.images, self.weights['w1'], strides=[1,1,1,1], padding='VALID') + self.biases['b1'], 1)
+    features = tf.nn.conv2d(self.images, self.weights['w1'], strides=[1,1,1,1], padding='VALID') + self.biases['b1']
 
     # Shrinking
     if self.model_params[1] > 0:
+      features = self.prelu(features, 1)
       self.weights['w2'] = tf.get_variable('w2', initializer=tf.random_normal([1, 1, d, s], stddev=0.3536, dtype=tf.float32))
       self.biases['b2'] = tf.get_variable('b2', initializer=tf.zeros([s]))
-      conv = self.prelu(tf.nn.conv2d(conv, self.weights['w2'], strides=[1,1,1,1], padding='SAME') + self.biases['b2'], 2)
+      features = tf.nn.conv2d(features, self.weights['w2'], strides=[1,1,1,1], padding='SAME') + self.biases['b2']
     else:
       s = d
 
+    conv = features
     # Mapping (# mapping layers = m)
     with tf.variable_scope("mapping_block") as scope:
         for ri in range(r):
@@ -44,15 +46,20 @@ class FSRCNN(object):
             weights = tf.get_variable('w{}'.format(i), initializer=tf.random_normal([3, 3, s, s], stddev=0.1179, dtype=tf.float32))
             biases = tf.get_variable('b{}'.format(i), initializer=tf.zeros([s]))
             self.weights['w{}'.format(i)], self.biases['b{}'.format(i)] = weights, biases
-            conv = self.prelu(tf.nn.conv2d(conv, weights, strides=[1,1,1,1], padding='SAME') + biases, i)
+            conv = self.prelu(conv, i)
+            conv = tf.nn.conv2d(conv, weights, strides=[1,1,1,1], padding='SAME') + biases
+            if i == m + 2:
+              conv = tf.add(conv, features)
           scope.reuse_variables()
+    conv = self.prelu(conv, 2)
 
     # Expanding
     if self.model_params[1] > 0:
       expand_weights = tf.get_variable('w{}'.format(m + 3), initializer=tf.random_normal([1, 1, s, d], stddev=0.189, dtype=tf.float32))
       expand_biases = tf.get_variable('b{}'.format(m + 3), initializer=tf.zeros([d]))
       self.weights['w{}'.format(m + 3)], self.biases['b{}'.format(m + 3)] = expand_weights, expand_biases
-      conv = self.prelu(tf.nn.conv2d(conv, expand_weights, strides=[1,1,1,1], padding='SAME') + expand_biases, m + 3)
+      conv = tf.nn.conv2d(conv, expand_weights, strides=[1,1,1,1], padding='SAME') + expand_biases
+      conv = self.prelu(conv, m + 3)
 
     # Deconvolution
     deconv_size = self.radius * self.scale * 2 + 1
