@@ -6,18 +6,17 @@ import os
 import glob
 import h5py
 from math import ceil
-import struct
 import io
 from random import randrange
 
 import tensorflow as tf
-from PIL import Image  
+from PIL import Image
 import numpy as np
 from multiprocessing import Pool, Lock, active_children
 
-import pdb
-
 FLAGS = tf.app.flags.FLAGS
+
+downsample = True
 
 def read_data(path):
   """
@@ -37,36 +36,61 @@ def read_data(path):
 
 def preprocess(path, scale=3, distort=False):
   """
-  Preprocess single image file 
-    (1) Read original image as YCbCr format
-    (2) Normalize
-    (3) Downsampled by scale factor
+  Preprocess single image file
+    (1) Read original image
+    (2) Downsample by scale factor
+    (3) Normalize
   """
+  try:
+    from wand.image import Image
+  except:
+    from PIL import Image
+    image = Image.open(path).convert('L')
+    (width, height) = image.size
 
-  image = Image.open(path).convert('L')
-  (width, height) = image.size
-  label_ = np.fromstring(image.tobytes(), dtype=np.uint8).reshape((height, width)) / 255
-  image.close()
+    if downsample:
+        image = image.crop((0, 0, width - width % scale, height - height % scale))
 
-  cropped_image = Image.fromarray(modcrop(label_, scale))
+        (width, height) = image.size
+        label_ = np.fromstring(image.tobytes(), dtype=np.uint8).reshape((height, width))
 
-  (width, height) = cropped_image.size
-  new_width, new_height = int(width / scale), int(height / scale)
-  scaled_image = cropped_image.resize((new_width, new_height), Image.BICUBIC)
-  cropped_image.close()
+        new_width, new_height = int(width / scale), int(height / scale)
+        scaled_image = image.resize((new_width, new_height), Image.BICUBIC)
+        image.close()
 
-  (width, height) = scaled_image.size
-  input_ = np.array(scaled_image.getdata()).astype(np.float).reshape((height, width))
+        (width, height) = scaled_image.size
+        if randrange(3) == 0 and distort==True:
+            buf = io.BytesIO()
+            scaled_image.convert('RGB').save(buf, "JPEG", quality=randrange(80, 95, 5))
+            buf.seek(0)
+            scaled_image = Image.open(buf).convert('L')
 
-  if randrange(3) == 2 and distort==True:
-      buf = io.BytesIO()
-      i = Image.fromarray(input_ * 255)
-      i.convert('RGB').save(buf, "JPEG", quality=randrange(50, 99, 5))
-      buf.seek(0)
-      scaled_image = Image.open(buf).convert('L')
-      input_ = np.fromstring(scaled_image.tobytes(), dtype=np.uint8).reshape((height, width)) / 255
+        input_ = np.fromstring(scaled_image.tobytes(), dtype=np.uint8).reshape((height, width))
+    else:
+        input_ = np.fromstring(image.tobytes(), dtype=np.uint8).reshape(height, width)
+        scaled_image = image.resize((width * scale, height * scale), Image.BICUBIC)
+        (width, height) = scaled_image.size
+        label_ = np.fromstring(scaled_image.tobytes(), dtype=np.uint8).reshape(height, width)
+  else:
+    with Image(filename=path) as img:
+        img.alpha_channel = False
+        if downsample:
+            img.crop(width = img.width - img.width % scale, height = img.height - img.height % scale)
+            label_ = np.fromstring(img.make_blob('gray'), dtype=np.uint8).reshape(img.height, img.width)
+            img.resize(width = img.width // scale, height = img.height // scale, filter = "lanczos2", blur=0.9)
+            input_ = np.fromstring(img.make_blob('gray'), dtype=np.uint8).reshape(img.height, img.width)
+            if randrange(3) == 0 and distort==True:
+                img.compression_quality = randrange(80, 95, 5)
+                img.format = 'jpeg'
+                jpeg_bin = img.make_blob()
+                with Image(blob=jpeg_bin) as jpeg:
+                    input_ = np.fromstring(jpeg.make_blob('gray'), dtype=np.uint8).reshape(jpeg.height, jpeg.width)
+        else:
+            input_ = np.fromstring(img.make_blob('gray'), dtype=np.uint8).reshape(img.height, img.width)
+            img.resize(width = img.width * scale, height = img.height * scale, filter = "catrom")
+            label_ = np.fromstring(img.make_blob('gray'), dtype=np.uint8).reshape(img.height, img.width)
 
-  return input_, label_
+  return input_ / 255, label_ / 255
 
 def prepare_data(sess, dataset):
   """
@@ -154,6 +178,10 @@ def thread_train_setup(config):
   Also this is technically multiprocessing not threading, I just say thread
   because it's shorter to type.
   """
+  if downsample == False:
+    import sys
+    sys.exit()
+
   sess = config.sess
 
   # Load data path
@@ -199,6 +227,10 @@ def train_input_setup(config):
   """
   Read image files, make their sub-images, and save them as a h5 file format.
   """
+  if downsample == False:
+    import sys
+    sys.exit()
+
   sess = config.sess
   image_size, label_size, stride, scale, padding = config.image_size, config.label_size, config.stride, config.scale, config.radius
 

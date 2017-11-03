@@ -7,6 +7,8 @@ TensorFlow implementation of the Fast Super-Resolution Convolutional Neural Netw
  * CUDA & cuDNN >= 6.0
  * h5py
  * Pillow
+ * ImageMagick (optional)
+ * Wand (optional)
 
 ## Usage
 For training: `python main.py`
