@@ -23,8 +23,6 @@ Can specify epochs, data directory, etc:
 <br>
 Check `main.py` for all the possible flags
 
-Also includes script `expand_data.py` which scales and rotates all the images in the specified training set to expand it
-
 ## Result
 
 Original butterfly image:
