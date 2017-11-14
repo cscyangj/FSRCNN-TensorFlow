@@ -1,5 +1,4 @@
 from utils import (
-  read_data, 
   thread_train_setup,
   train_input_setup,
   test_input_setup,
@@ -10,6 +9,7 @@ from utils import (
 
 import time
 import os
+from random import randrange
 
 import numpy as np
 import tensorflow as tf
@@ -40,11 +40,8 @@ class Model(object):
     # Different image/label sub-sizes for different scaling factors x2, x3, x4
     scale_factors = [[10 + self.padding, 20], [7 + self.padding, 21], [6 + self.padding, 24]]
     self.image_size, self.label_size = scale_factors[self.scale - 2]
-    # Testing uses different strides to ensure sub-images line up correctly
-    if not self.train:
-      self.stride = [10, 7, 6][self.scale - 2]
-    else:
-      self.stride = [6, 4, 4][self.scale - 2]
+
+    self.stride = self.image_size - self.padding
 
     self.checkpoint_dir = config.checkpoint_dir
     self.output_dir = config.output_dir
@@ -98,14 +95,10 @@ class Model(object):
     start_time = time.time()
     print("Beginning training setup...")
     if self.threads == 1:
-      train_input_setup(self)
+      train_data, train_label = train_input_setup(self)
     else:
-      thread_train_setup(self)
+      train_data, train_label = thread_train_setup(self)
     print("Training setup took {} seconds with {} threads".format(time.time() - start_time, self.threads))
-
-    data_dir = os.path.join('./{}'.format(self.checkpoint_dir), "train.h5")
-    train_data, train_label = read_data(data_dir)
-    print("Total setup time took {} seconds with {} threads".format(time.time() - start_time, self.threads))
 
     print("Training...")
     start_time = time.time()
@@ -119,17 +112,29 @@ class Model(object):
         batch_images = train_data[idx * self.batch_size : (idx + 1) * self.batch_size]
         batch_labels = train_label[idx * self.batch_size : (idx + 1) * self.batch_size]
 
-        counter += 1
-        _, err = self.sess.run([self.train_op, self.loss], feed_dict={self.images: batch_images, self.labels: batch_labels, self.batch: self.batch_size})
-        batch_average += err
+        for exp in range(3):
+            if exp==0:
+                images = batch_images
+                labels = batch_labels
+            elif exp==1:
+                k = randrange(3)+1
+                images = np.rot90(batch_images, k, (1,2))
+                labels = np.rot90(batch_labels, k, (1,2))
+            elif exp==2:
+                k = randrange(2)
+                images = batch_images[:,::-1] if k==0 else batch_images[:,:,::-1]
+                labels = batch_labels[:,::-1] if k==0 else batch_labels[:,:,::-1]
+            counter += 1
+            _, err = self.sess.run([self.train_op, self.loss], feed_dict={self.images: images, self.labels: labels, self.batch: self.batch_size})
+            batch_average += err
 
-        if counter % 10 == 0:
-          print("Epoch: [%2d], step: [%2d], time: [%4.4f], loss: [%.8f]" \
-            % ((ep+1), counter, time.time() - start_time, err))
+            if counter % 10 == 0:
+              print("Epoch: [%2d], step: [%2d], time: [%4.4f], loss: [%.8f]" \
+                % ((ep+1), counter, time.time() - start_time, err))
 
-        # Save every 500 steps
-        if counter % 500 == 0:
-          self.save(counter)
+            # Save every 500 steps
+            if counter % 500 == 0:
+              self.save(counter)
 
       batch_average = float(batch_average) / batch_idxs
       if ep < (self.epoch * 0.2):
@@ -151,9 +156,7 @@ class Model(object):
 
   
   def run_test(self):
-    nx, ny = test_input_setup(self)
-    data_dir = os.path.join('./{}'.format(self.checkpoint_dir), "test.h5")
-    test_data, test_label = read_data(data_dir)
+    test_data, test_label, nx, ny = test_input_setup(self)
 
     print("Testing...")
 

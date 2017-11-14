@@ -5,7 +5,6 @@ TensorFlow implementation of the Fast Super-Resolution Convolutional Neural Netw
  * Python 3
  * TensorFlow-gpu >= 1.3
  * CUDA & cuDNN >= 6.0
- * h5py
  * Pillow
  * ImageMagick (optional)
  * Wand (optional)
@@ -55,7 +54,6 @@ With --distort=True:
 ## TODO
 
 * Add RGB support (Increase each layer depth to 3)
-* Speed up pre-processing for large datasets
 
 ## References
 
