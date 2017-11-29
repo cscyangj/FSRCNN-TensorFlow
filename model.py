@@ -25,6 +25,7 @@ class Model(object):
     self.arch = config.arch
     self.fast = config.fast
     self.train = config.train
+    self.adversarial = config.adversarial
     self.c_dim = config.c_dim
     self.is_grayscale = (self.c_dim == 1)
     self.epoch = config.epoch
@@ -54,28 +55,59 @@ class Model(object):
     self.labels = tf.placeholder(tf.float32, [None, self.label_size, self.label_size, self.c_dim], name='labels')
     # Batch size differs in training vs testing
     self.batch = tf.placeholder(tf.int32, shape=[], name='batch')
- 
-    if self.arch == 1:
-        from FSRCNN import FSRCNN
-        self.model = FSRCNN(self)
-    elif self.arch == 2:
-        from ESPCN import ESPCN
-        self.model = ESPCN(self)
-    elif self.arch == 3:
-        from LapSRN import LapSRN
-        self.model = LapSRN(self)
 
-    self.pred = self.model.model()
+    with tf.variable_scope('generator'):
+        if self.arch == 1:
+            from FSRCNN import FSRCNN
+            self.model = FSRCNN(self)
+        elif self.arch == 2:
+            from ESPCN import ESPCN
+            self.model = ESPCN(self)
+        elif self.arch == 3:
+            from LapSRN import LapSRN
+            self.model = LapSRN(self)
+
+        self.pred = self.model.model()
 
     model_dir = "%s_%s_%s_%s" % (self.model.name.lower(), self.label_size, '-'.join(str(i) for i in self.model.model_params), "r"+str(self.radius))
     self.model_dir = os.path.join(self.checkpoint_dir, model_dir)
 
     self.loss = self.model.loss(self.labels, self.pred)
 
-    self.saver = tf.train.Saver()
+    if self.adversarial and self.train and not self.params:
+        from discriminator import discriminator
+        with tf.variable_scope('discriminator', reuse=False):
+            discrim_fake_output = discriminator(self.pred)
+        with tf.variable_scope('discriminator', reuse=True):
+            discrim_real_output = discriminator(self.labels)
+
+        discrim_fake_loss = tf.log(1 - discrim_fake_output + 1e-12)
+        discrim_real_loss = tf.log(discrim_real_output + 1e-12)
+
+        self.discrim_loss = tf.reduce_mean(-(discrim_fake_loss + discrim_real_loss))
+        self.adversarial_loss = tf.reduce_mean(-tf.log(discrim_fake_output + 1e-12))
+
+        self.dis_saver = tf.train.Saver(tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, scope='discriminator'))
+
+    self.saver = tf.train.Saver(tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, scope='generator'))
 
   def run(self):
-    self.train_op = tf.train.AdamOptimizer(self.learning_rate).minimize(self.loss)
+    if self.adversarial and self.train and not self.params:
+        with tf.variable_scope('dicriminator_train'):
+            discrim_tvars = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope='discriminator')
+            discrim_optimizer = tf.train.AdamOptimizer(self.learning_rate)
+            discrim_grads_and_vars = discrim_optimizer.compute_gradients(self.discrim_loss, discrim_tvars)
+            discrim_train = discrim_optimizer.apply_gradients(discrim_grads_and_vars)
+
+        with tf.variable_scope('generator_train'):
+            # Need to wait discriminator to perform train step
+            with tf.control_dependencies([discrim_train] + tf.get_collection(tf.GraphKeys.UPDATE_OPS)):
+                gen_tvars = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope='generator')
+                gen_optimizer = tf.train.AdamOptimizer(self.learning_rate)
+                gen_grads_and_vars = gen_optimizer.compute_gradients(self.loss + 1e-3 * self.adversarial_loss, gen_tvars)
+                self.train_op = gen_optimizer.apply_gradients(gen_grads_and_vars)
+    else:
+        self.train_op = tf.train.AdamOptimizer(self.learning_rate).minimize(self.loss)
 
     tf.global_variables_initializer().run()
 
@@ -125,7 +157,10 @@ class Model(object):
                 images = batch_images[:,::-1] if k==0 else batch_images[:,:,::-1]
                 labels = batch_labels[:,::-1] if k==0 else batch_labels[:,:,::-1]
             counter += 1
-            _, err = self.sess.run([self.train_op, self.loss], feed_dict={self.images: images, self.labels: labels, self.batch: self.batch_size})
+            if self.adversarial:
+                _, err, _, _ = self.sess.run([self.train_op, self.loss, self.discrim_loss, self.adversarial_loss], feed_dict={self.images: images, self.labels: labels, self.batch: self.batch_size})
+            else:
+                _, err = self.sess.run([self.train_op, self.loss], feed_dict={self.images: images, self.labels: labels, self.batch: self.batch_size})
             batch_average += err
 
             if counter % 10 == 0:
@@ -180,6 +215,10 @@ class Model(object):
     self.saver.save(self.sess,
                     os.path.join(self.model_dir, model_name),
                     global_step=step)
+    if self.adversarial:
+        self.dis_saver.save(self.sess,
+                        os.path.join(os.path.join(self.model_dir, "discriminator"), "discriminator.model"),
+                        global_step=step)
 
   def load(self):
     print(" [*] Reading checkpoints...")
@@ -188,6 +227,10 @@ class Model(object):
     if ckpt and ckpt.model_checkpoint_path:
         ckpt_name = os.path.basename(ckpt.model_checkpoint_path)
         self.saver.restore(self.sess, os.path.join(self.model_dir, ckpt_name))
+        ckpt = tf.train.get_checkpoint_state(os.path.join(self.model_dir, "discriminator"))
+        if self.adversarial and self.train and not self.params and ckpt and ckpt.model_checkpoint_path:
+            ckpt_name = os.path.basename(ckpt.model_checkpoint_path)
+            self.dis_saver.restore(self.sess, os.path.join(os.path.join(self.model_dir, "discriminator"), ckpt_name))
         return True
     else:
         return False
