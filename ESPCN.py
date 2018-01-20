@@ -53,5 +53,4 @@ class ESPCN(object):
     return tf.nn.relu(_x) - alphas * tf.nn.relu(-_x)
 
   def loss(self, Y, X):
-    ssim = tf_ms_ssim(Y, X, level=2)
-    return (1 - ssim) / 2
+    return tf.reduce_mean(tf.sqrt(tf.square(X - Y) + 1e-6))
